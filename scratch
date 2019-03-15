@@ -1,0 +1,306 @@
+
+
+.text
+.global _thermo_update
+_thermo_update:
+  xorq %rax, %rax /* zero fill */
+  push %rax /* short */
+  push %rax /* char */
+  movq %rsp, %rdi /* arg1: a ptr to a duplicate temp_t x on the stack */
+  addq $3, %rdi
+  call _set_temp_from_ports /* call set_temp_from_ports */
+  testq %rax, %rax
+  jnz .else_flag
+  pop %rax
+  pop %rdx
+  push %rdx
+  push %rax
+  push %rdx
+  push %rax
+  movq %rsp, %rdi /* arg1: a ptr to a duplicate temp_t x on the stack */
+  leaq _THERMO_DISPLAY_PORT(%rip), %rsi /* arg2: ptr to a diplay port */
+  call _set_display_from_temp
+  pop %rax
+  pop %rdx
+  pop %rax
+  pop %rdx
+  movq $0, %rax /* return 0 */
+  ret
+.else_flag:
+  movq $1, %rax /* return 1 */
+  ret
+
+
+
+
+
+-------------
+
+.text
+.global  set_display_from_temp
+
+set_display_from_temp:
+  pushq %rbp
+  movq %rbp, %rsp
+  # get temp out of the stack
+  movq (%rdi), %r8
+  addq $8, %rdi
+  movq (%rdi), %rcx
+  pushq %rdi
+  # set display
+  pushq %rsi
+  movq (%rsi), %rsi
+  movl $0, %esi
+  # first if statement
+  cmpb $1, %cl
+  je .cont_1
+  cmpb $0, %cl
+  je .cont_1
+  movl $-1, %esi
+  movq $1, %rax
+  ret
+.cont_1:
+  # second if statement
+  cmpb $1, %cl
+  jne cont_2
+  cmpw $-580, %r8w
+  jge cont_3
+.cont_2:
+  cmpw $1220, %r8w
+  jg cont_4
+.cont_3:
+  movl $-1, %esi
+  movq $1, %rax
+  ret
+.cont_4:
+  # third if statement
+  cmpb $0, %cl
+  jne cont_5
+  cmpw $-580, %r8w
+  jge cont_6
+.cont_5:
+  cmpw $1220, %r8w
+  jg cont_7
+.cont_6:
+  movl $-1, %esi
+  movq $1, %rax
+  ret
+.cont_7:
+  # negative
+  movq $0, %r9
+  cmpw $0, %r8w
+  jl .cont_8
+  movq $1, %r9
+  negw %r8w
+.cont_8:
+  # farenheit or celcius
+  cmpb $1, %cl
+  jne cont_9
+  shll $2, %esi
+  addl $2, %esi
+  jmp .cont_10
+.cont_9:
+  shll $2, %esi
+  addl $1, %esi
+.cont_10:
+  # rsi = *display, rcx = temp_hundreds, r10 = temp_tens, r11 = temp_ones,
+  # rdi = temp_tenths, negative = r9
+  # init vars
+  # temp_hundreds
+  xorq %rcx, %rcx
+  pushw %r8w
+  # / 1000
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $1000, %r8w
+  idivw %r8w
+  movw %ax, %r8w
+  # % 10
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $10, %r8w
+  idivw %r8w
+  movw %dx, %r8w
+  movw %r8w, %cx
+  popw %r8w
+  # temp_tens
+  xorq %r10, %r10
+  pushw %r8w
+  # / 100
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $100, %r8w
+  idivw %r8w
+  movw %ax, %r8w
+  # % 10
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $10, %r8w
+  idivw %r8w
+  movw %dx, %r8w
+  movw %r8w, %r10w
+  popw %r8w
+  # temp_ones
+  xorq %r11, %r11
+  pushw %r8w
+  # / 10
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $10, %r8w
+  idivw %r8w
+  movw %ax, %r8w
+  # % 10
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $10, %r8w
+  idivw %r8w
+  movw %dx, %r8w
+  movw %r8w, %r11w
+  popw %r8w
+  # temp_tenths
+  xorq %rdi, %rdi
+  pushw %r8w
+  # % 10
+  xorq %rax, %rax
+  xorq %rdx, %rdx
+  movw %r8w, %ax
+  cwd
+  movw $10, %r8w
+  idivw %r8w
+  movw %dx, %r8w
+  movw %r8w, %di
+  popw %r8w
+  # rsi = *display, rcx = temp_hundreds, r10 = temp_tens, r11 = temp_ones,
+  # rdi = temp_tenths, negative = r9
+  # init bitmasks array
+  push $0x5F
+  push $0x7F
+  push $0x07
+  push $0x7D
+  push $0x6D
+  push $0x66
+  push $0x4F
+  push $0x5B
+  push $0x06
+  push $0x3F
+  movq %rsp, %rax
+  # init neg array
+  push $0x40
+  push $0x00
+  movq %rsp, %rdx
+  /* if temp_hundreds != 0 */
+  cmpl $0, %ecx
+  je .cont_11
+  shll $7, %esi
+  addl (%rax, %rcx, 8), %esi
+  shll $7, %esi
+  addl (%rax, %r10, 8), %esi
+  shll $7, %esi
+  addl (%rax, %r11, 8), %esi
+  shll $7, %esi
+  addl (%rax, %rdi, 8), %esi
+  jmp .write_back_ret
+.cont_11:
+  /* else if temp_tens != 0 && negative == 1 */
+  cmpl $0, %r10d
+  je .cont_12
+  cmpl $1, %r9d
+  jne .cont_12
+  shll $7, %esi
+  addl 8(%rdx), %esi
+  shll $7, %esi
+  addl (%rax, %r10, 8), %esi
+  shll $7, %esi
+  addl (%rax, %r11, 8), %esi
+  shll $7, %esi
+  addl (%rax, %rdi, 8), %esi
+  jmp .write_back_ret
+.cont_12:
+  shll $7, %esi
+  addl (%rdx), %esi
+  /* else */
+  cmpl $0, %r10d
+  je .cont_13
+  shll $7, %esi
+  addl (%rax, %r10, 8), %esi
+  shll $7, %esi
+  addl (%rax, %r11, 8), %esi
+  shll $7, %esi
+  addl (%rax, %rdi, 8), %esi
+  jmp .write_back_ret
+.cont_13:
+  /* else if temp_ones != 0 && negative == 1 */
+  cmpl $0, %r11d
+  je .cont_14
+  cmpl $1, %r9d
+  jne .cont_14
+  shll $7, %esi
+  addl 8(%rdx), %esi
+  shll $7, %esi
+  addl (%rax, %r11, 8), %esi
+  shll $7, %esi
+  addl (%rax, %rdi, 8), %esi
+  jmp .write_back_ret
+.cont_14:
+  /* else if temp_ones != 0 && negative == 0 */
+  cmpl $0, %r11d
+  je .cont_15
+  cmpl $0, %r9d
+  jne .cont_15
+  shll $7, %esi
+  addl (%rdx), %esi
+  shll $7, %esi
+  addl (%rax, %r11, 8), %esi
+  shll $7, %esi
+  addl (%rax, %rdi, 8), %esi
+  jmp .write_back_ret
+.cont_15:
+  /* else
+  if negative == 1 */
+  cmpl $1, %r9d
+  jne .cont_16
+  shll $7, %esi
+  addl 4(%rdx), %esi
+  jmp .cont_17
+.cont_16:
+  /* else */
+  shll $7, %esi
+  addl (%rdx), %esi
+.cont_17:
+  shll $7, %esi
+  addl (%rax, %r11, 8), %esi
+  shll $7, %esi
+  addl (%rax, %rdi, 8), %esi
+.write_back_ret:
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %rax
+  pop %r10 # display address
+  pop %r11 # struct address
+  movl %esi, (%r10)
+  movb %cl, (%r11)
+  subq $-2, %r11
+  movw %r8w, (%r11)
+  movq $0, %rax
+  ret
